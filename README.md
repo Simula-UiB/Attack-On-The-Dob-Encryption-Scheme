@@ -1,6 +1,6 @@
 <h1 align="center">Attack on the Dob Encryption Scheme</h1>
 <p align="center">
-    <a href="https://github.com/Simula-UiB/Name_of_the_repo/blob/master/AUTHORS">
+    <a href="https://github.com/Simula-UiB/Name_of_the_repo/blob/master/AUTHORS"></a>
     <a href="https://github.com/Simula-UiB/Name_of_the_repo/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
 </p>
 
