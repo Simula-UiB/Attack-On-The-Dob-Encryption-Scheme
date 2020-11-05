@@ -1,7 +1,7 @@
 <h1 align="center">Attack on the Dob Encryption Scheme</h1>
 <p align="center">
-    <a href="https://github.com/Simula-UiB/Name_of_the_repo/blob/master/AUTHORS"></a>
-    <a href="https://github.com/Simula-UiB/Name_of_the_repo/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+    <a href="https://github.com/Simula-UiB/Attack-On-The-Dob-Encryption-Scheme/blob/master/AUTHORS"><img src="https://img.shields.io/badge/authors-SimulaUIB-orange.svg"></a>
+    <a href="https://github.com/Simula-UiB/Attack-On-The-Dob-Encryption-Scheme/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
 </p>
 
 Contains Magma scripts for generating the public key of the Dob encryption scheme, as well as an implementation of the attack on this construction.
