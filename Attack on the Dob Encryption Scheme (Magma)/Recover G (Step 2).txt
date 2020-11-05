@@ -1,0 +1,922 @@
+//Step 2 that assumes that a Dob-system has been created by the file "Generate Public Key (Step 1)". 
+//Only the use of three variables sets W_1, W_2, W_3 (namesd FixVar1, FixVar2 and FixVar3 in this file) have been implemented. They need to be updated manually (see below)
+//Finds and tests a system \mathcal{G} (named qHom in this file), as described in Section 6.2 of the article.
+
+//Decide whether to test qHom.
+UseTestQHom := 0;
+
+//Note! Only UseFixVars := 1 implemented.
+UseFixVars := 1;
+
+//Note, update FixVars manually
+
+//FixVars for d = 63
+FixVar1 := [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21];
+FixVar2 := [22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42];
+FixVar3 := [43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63];
+
+/*
+//FixVars for d = 45
+FixVar1 := [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15];
+FixVar2 := [16,17,18,19,20,21,22,23,24,25,26,27,28,29,30];
+FixVar3 := [31,32,33,34,35,36,37,38,39,40,41,42,43,44,45];
+*/
+
+/*
+//FixVars for d = 33;
+FixVar1 := [1,2,3,4,5,6,7,8,9,10,11];
+FixVar2 := [12,13,14,15,16,17,18,19,20,21,22];
+FixVar3 := [23,24,25,26,27,28,29,30,31,32,33];
+*/
+
+
+QuadraticModifiers := Plus + Binomial(OPlus,2);
+
+//m is the size of I (without the random P).
+m := 1 + # I;
+
+ColSize := Binomial(n,2);
+
+NameVec := ["x" * IntegerToString(i) : i in [1..n] ];
+P := BooleanPolynomialRing(n,"grevlex");
+AssignNames(~P, NameVec);
+
+ZZ := IntegerRing();
+
+//The degree of the (upper homogeneous) macaulay matrix. Degree 4 is the only implemented choice at the moment.
+MacDeg := 4;
+
+
+//Column size of the degree 4 homogeneous Macaulay matrix
+totSize := Binomial(n,4);
+
+//Row size of the Macaulay matrix
+RowSize := ColSize*m;
+
+Vec:=VectorSpace(K,totSize);
+
+
+//Creates RandP as a random, homogeneous quadratic polynomial
+RandP := 0;
+for j in [1 + fix..n] do
+	
+	for k in [j + 1..n] do
+		RandP := RandP + Random(GF(2))*R.j*R.k;
+	end for;
+			
+			
+end for;
+		
+RandP := P ! RandP;
+		
+
+
+
+//Functions for constructing a degree 4 macaulay matrix from a polynomial system
+//---------------------------------------------------------------------------------------
+
+//Function that takes a monomial x*x*x*, and its weight, and returns a list of the first integer index * and the monomial without the first variable
+GetFirstVarInd := function(a,t)
+
+  s := Sprint(a);
+  len := #s;
+  ans := [* *];
+  
+if  t ge 2 then
+
+  for i in [2.. len] do
+  
+    if s[i] eq "*" then
+
+      endInd := i;
+      break;
+
+    end if;
+
+  end for; 
+
+  Append(~ans, Substring(s,2,endInd - 2));
+  //ans :=UpdateList(ans,Substring(s,2,endInd - 2));
+  Append(~ans, Substring(s,endInd+1,len));
+  //ans :=UpdateList(ans,Substring(s,endInd+1,len));
+
+else 
+
+  endInd := len + 1;
+  Append(~ans, Substring(s,2,endInd - 2));
+  //ans :=UpdateList(ans,Substring(s,2,endInd - 2));
+
+end if; 
+
+  return ans;
+
+end function;
+
+
+
+
+//------------------------------------------------------------------------------------------
+
+
+//function that takes as input a monomial, and returns its entry in the Macaulay matrix.
+GetMonInd := function(a)
+
+  monDeg := WeightedDegree(a);
+  
+  if monDeg eq 4 then
+  
+	t := [];
+  
+	ls := GetFirstVarInd(a,4); 
+    Append(~t,StringToInteger(ls[1]));
+    
+    ls :=GetFirstVarInd(ls[2],3);
+    Append(~t,StringToInteger(ls[1]));
+	
+	ls :=GetFirstVarInd(ls[2],2);
+    Append(~t,StringToInteger(ls[1]));
+	
+	ls :=GetFirstVarInd(ls[2],1);
+    Append(~t,StringToInteger(ls[1]));
+
+    ind := 0; 
+
+    for i in [1.. t[1]-1] do 
+      ind := ind + Binomial(n-i,3);
+    end for;
+	
+	for i in [t[1] + 1.. t[2]-1] do 
+      ind := ind + Binomial(n-i,2);
+    end for;
+	
+	for i in [t[2] + 1.. t[3]-1] do 
+      ind := ind + Binomial(n-i,1);
+    end for;
+	
+	for i in [t[3] + 1.. t[4]-1] do 
+      ind := ind + Binomial(n-i,0);
+    end for;
+	
+	ind := ind + 1;
+	
+	
+  
+  elif monDeg le 3 then
+  
+	ind := -1;
+  
+  else
+
+    print "Wrong weight of monomial";
+    ind := 0;  
+
+  end if;
+
+
+  return ind;
+
+end function;
+
+
+//-----------------------------------------------------------
+//function that takes as input a polynomial, and return its corresponding vector in the Macaulay matrix
+
+GetVec := function(f)
+
+  V:= Zero(Vec);
+
+  for el in Monomials(f) do
+    
+    if el eq 1 then
+      V[totSize] := 1;
+    else
+	  Entry := GetMonInd(el);
+		if Entry ge 1 then
+		
+			V[ZZ!Entry] := 1;
+			
+		end if;
+    end if;
+
+  end for;
+
+  return V;
+
+end function;
+
+
+//------------------------------------------------------------------------------------------
+//Function that creates a list counting the (lex) order of which monomials are multiplied with the starting polynomial (NB! Only D = 4)
+GetOrder := function()
+	
+
+	Vec := ZeroMatrix(P,1,ColSize);
+	counter := 1;
+	
+	for i in [1..n-1] do
+	
+		for j in [i + 1.. n] do
+		
+				Vec[1,counter] := P.i*P.j;
+				counter := counter + 1;
+		
+		end for;
+		
+	end for;
+
+	return Vec;
+
+end function;
+
+//--------------------------------------------------------------------------------------------
+//function that takes as input a monomial, and returns its entry in the degree 2 Macaulay matrix.
+//Assumes a degree 2 polynomial in graded order.
+GetMonIndTwo := function(a)
+
+  Prev := 0;
+
+  
+	t := [];
+  
+	
+	ls :=GetFirstVarInd(a,2);
+    Append(~t,StringToInteger(ls[1]));
+	
+	ls :=GetFirstVarInd(ls[2],1);
+    Append(~t,StringToInteger(ls[1]));
+	
+    ind := 0; 
+
+	
+	for i in [1.. t[1]-1] do 
+      ind := ind + Binomial(n-i,1);
+    end for;
+	
+	for i in [t[1] + 1.. t[2]-1] do 
+      ind := ind + Binomial(n-i,0);
+    end for;
+	
+	ind := ind + 1 + Prev;
+	
+
+  return ind;
+
+end function;
+
+
+//--------------------------------------------------------------------------------------------------------------------
+//Get Vector in a homogeneous degree 2 macaulay matrix
+GetVec2 := function(f)
+
+
+  V:= Zero(VectorSpace(K,ColSize));
+
+  for el in Monomials(f) do
+    
+    if el eq 1 then
+      break;
+    else
+		
+		monDeg := WeightedDegree(el);
+		
+				
+		if monDeg eq 2 then
+		
+			Entry := GetMonIndTwo(el);
+			
+			
+
+		
+				V[ZZ!Entry] := 1;
+			
+
+		
+		else
+		
+			break;
+		
+		end if;
+		
+	end if;
+
+  end for;
+
+  return V;
+
+end function;
+
+
+//--------------------------------------------------------------------------------------------------------------------
+//
+FindGlueAlong := function(FixVar1, FixVar2)
+
+GlueAlong := [];
+for i in [1..n] do
+
+	New := 1;
+	for j in [1..# FixVar1] do
+	
+		if FixVar1[j] eq i then
+		
+			New := 0;
+			break;
+		
+		end if;
+	
+	end for;
+	
+	if New eq 1 then
+	
+		for j in [1..# FixVar2] do
+		
+			if FixVar2[j] eq i then
+			
+				New := 0;
+				break;
+			
+			end if;
+		
+		end for;
+	
+	end if;
+	
+	if New eq 1 then
+	
+		GlueAlong := GlueAlong cat [i];
+	
+	end if;
+
+end for;
+
+return GlueAlong;
+
+end function;
+
+
+
+//--------------------------------------------------------------------------------------------------------------------
+//Takes as input Ord, the order used to create the kernel vectors (glex, by default). GlueAlong is a set of a given variables. Returns a permutation that
+//permutes the old order such that the Binomial(GlueAlong,2) quadratic monomials in the GlueAlong-variables appears at the beginning.
+PermutationCreator := function(Ord, GlueAlong)
+
+GACounter := 1;
+TotCounter := 1;
+Permutation := [];
+
+for i in [1..ColSize] do 
+
+	Permutation := Permutation cat [i];
+
+end for;
+
+TopGA := Binomial(# GlueAlong,2);
+
+while GACounter lt TopGA + 1 do
+
+	mon := Ord[1][TotCounter];
+	
+	InGA := 0;
+	
+	ls :=GetFirstVarInd(mon,2);
+
+	for i in [1.. # GlueAlong] do
+	
+		if GlueAlong[i] eq StringToInteger(ls[1]) then
+		
+			InGA := 1;
+			
+			break;
+		
+		end if;
+	
+	end for;
+	
+	
+	if InGA eq 1 then
+	
+		InGA := 0;
+		
+		ls :=GetFirstVarInd(ls[2],1);
+		
+		for i in [1.. # GlueAlong] do
+	
+			if GlueAlong[i] eq StringToInteger(ls[1]) then
+		
+				InGA := 1;
+			
+				break;
+		
+			end if;
+	
+		end for;
+	
+	end if;
+	
+	
+	if InGA eq 1 then
+	
+		temp := Permutation[GACounter];
+		Permutation[GACounter] := Permutation[TotCounter];
+		Permutation[TotCounter] := temp;
+		
+		GACounter := GACounter + 1;
+	
+	end if;
+	
+
+	TotCounter := TotCounter + 1;
+	
+
+end while;
+
+
+PermutationMatrix := ZeroMatrix(P,ColSize,ColSize);
+
+for i in [1.. ColSize] do
+
+	PermutationMatrix[i][Permutation[i]] := 1;
+
+end for;
+
+//So far we've found the inverse, so we return the transposed matrix (recall that transpose is the same as inverse for permutations)
+return Transpose(PermutationMatrix);
+
+end function;
+
+//--------------------------------------------------------------------------------------------------------------------
+//Function that takes a set of polynomials S and a sorted(!) integer vector [i1..ij] and returns S|x_i1 = ... = x_ij = 0 (Note the projected set is over P)
+FixPolynomials := function(S, Vars)
+
+	ProjSet := [];
+	ProjVars := [];
+	StartVars := 1;
+	
+	for i in [1..n] do
+	
+		Check := 1;
+		if StartVars le # Vars then
+		
+			if i eq Vars[StartVars] then
+			
+				Check := 0;
+				ProjVars := ProjVars cat [0];
+				StartVars := StartVars + 1;
+			
+			end if;
+		
+		end if;
+		
+		if Check eq 1 then
+		
+			ProjVars := ProjVars cat [P.i];
+		
+		end if;
+	
+	end for;
+	
+	for i in [1.. #S] do 
+	
+		ProjSet := ProjSet cat [Evaluate(S[i],ProjVars)];
+	
+	end for;
+	
+	return ProjSet;
+	
+end function;
+
+
+//--------------------------------------------------------------------------------------------------------
+//Function takes the inputs a quadratic polynomial system I, along with a random quadratic polynomial RandP. Starts by creating a homogeneous 
+//degree 4 Macaulay matrix, and finds its kernel. PMatrix collects all vectors that was multiplied with RandP when fidng these kernel matrix.
+//Returns PMatrix. (Note: the function will also work when I and RandP are projected along some variables (xi's = 0), but note that the Macaulay matrix will still
+//use all n variables, so it is NOT optimized for this case).
+PMatrixCreator := function(I,RandP)
+
+counter := 1;
+Mac := ZeroMatrix(K,RowSize,totSize);
+
+//The first Binomial(n,2) rows are constructed from RandP
+for i in [1.. n - 1] do
+  
+  for j in [i + 1.. n] do
+  
+	Mac[counter] := GetVec(P.i*P.j*RandP[1]);
+	counter := counter + 1;
+  
+  end for;
+  
+end for;
+
+
+//The other rows are created from p1,...pd
+for i in [1.. n - 1] do
+  printf "Adding elements in glex order x%o\n", i;
+  for j in [i + 1.. n] do
+ 
+  
+	for el in I do
+		Mac[counter] := GetVec(P.i*P.j*(P ! el));
+		counter := counter + 1;
+	end for;
+		
+  end for;
+  
+end for;
+
+
+//Dimension should be non-trivial degree falls + Binomial(m,2) + m;
+Ker := Kernel(Mac);
+BKer := Basis(Ker);
+
+
+
+//PMatrix is the matrix where the columns are x_1x_2 x_1x_3... (homogeneous quadratic lex order). The rows are what was multiplied with RandP in the kernel elements
+PMatrix := ZeroMatrix(GF(2), Dimension(Ker), ColSize);
+
+for i in [1..Dimension(Ker)] do 
+
+	V := SubmatrixRange(BKer[i], 1, 1, 1, ColSize);
+	
+	InsertBlock(~PMatrix,V,i,1);
+	
+end for;
+
+return PMatrix;
+
+end function;
+
+//-----------------------------------------------------------------------------------------------------------------
+//Function that creates the degree 2 matrix associated with q1...qt,p1,...pd,RandP, and checks if it is linear equivalent to the input Matrix
+TestMatrixHasqh := function(Matrix)
+
+
+//XTuple needed to convert PlusPol to the right polynomial ring(through Evaluate)
+XTuple := [];
+
+for i in [1..n] do
+
+	Append(~XTuple,P.i);
+
+end for;
+
+//CheckMatrix is used to test whether PMatrix is linearly equivalent to q1..qt,p1..pd,P.
+CheckMatrix := ZeroMatrix(K,m + Plus,ColSize);
+
+
+counter := 1;
+
+for i in [1..Plus] do
+
+	CheckMatrix[counter] := GetVec2(Evaluate(PlusPol[i],XTuple));
+	counter := counter + 1;
+
+end for;
+
+for i in [1..m-1] do
+
+	VecToAdd := GetVec2(P ! I[i]);
+	CheckMatrix[counter] := VecToAdd;
+	counter := counter + 1;
+
+end for;
+
+VecToAdd := GetVec2(RandP);
+CheckMatrix[counter] := VecToAdd;
+
+//CompareMatrix is a concatenation of CheckMatrix and Matrix. We test if CompareMatrix indeed has the same rank as Matrix.
+CompareMatrix := ZeroMatrix(K,m + Plus + NumberOfRows(Matrix),ColSize);
+
+InsertBlock(~CompareMatrix,Matrix, 1, 1);
+InsertBlock(~CompareMatrix,CheckMatrix, NumberOfRows(Matrix) + 1, 1);
+
+
+if Rank(CompareMatrix) eq Rank(Matrix) and Rank(CompareMatrix) eq m + Plus then
+
+	 printf "The Matrix is linear equivalent to (q1..qt,p1,..,pd,P)^h";
+
+else
+	
+	printf "Rank of the Matrix is not as expected!";
+	
+end if;
+
+return [];
+
+end function;
+
+//----------------------------------------------------------------------------------------------------------------
+//Returns PublicMatrix, the matrix whose rows are the upper homogeneous parts of p1..pd,RandP (in glex order)
+PublicMatrixCreator := function()
+
+
+PublicMatrix := ZeroMatrix(K,m,ColSize);
+
+PublicCounter := 1;
+for i in [1..m-1] do
+
+	VecToAdd := GetVec2(P ! I[i]);
+	PublicMatrix[PublicCounter] := VecToAdd;
+	PublicCounter := PublicCounter + 1;
+
+end for;
+
+VecToAdd := GetVec2(RandP);
+PublicMatrix[PublicCounter] := VecToAdd;
+
+return PublicMatrix;
+
+end function;
+
+
+//----------------------------------------------------------------------------------------------------------------
+//Takes as input a quadratic polynomial system, returns the associated homogeneous Macaulay matrix (degree 2) in glex order
+QuadMacCreator := function(I)
+
+	M := ZeroMatrix(K,#I,ColSize);
+	for i in [1..#I] do
+	
+		M[i] := GetVec2(I[i]);
+	
+	end for;
+	
+	return M;
+
+end function;
+
+//----------------------------------------------------------------------------------------------------------------
+//Returns a matrix consisting of t rows from IMat that are linearly independent of M2.
+ReduceI := function(IMat,M2,t)
+
+	ReducedMat := ZeroMatrix(K,t,ColSize);
+	counter := 1;
+	NewM2Rank := Rank(M2);
+	
+	NewM2 := ZeroMatrix(K,NumberOfRows(M2) + t,ColSize);
+	
+	InsertBlock(~NewM2,M2,1, 1);
+	
+	for i in [1..NumberOfRows(IMat)] do
+	
+		if counter gt t then 
+			break;
+		end if;
+		
+		NewM2[NumberOfRows(M2) + counter] := IMat[i];
+		
+		if Rank(NewM2) gt NewM2Rank then
+		
+			ReducedMat[counter] := IMat[i];
+			counter := counter + 1;
+			NewM2Rank := Rank(NewM2);
+		
+		end if;
+	
+	end for;
+	
+	if counter gt t then
+		return ReducedMat;
+	else
+		printf "Error in ReduceI!";
+	end if;
+
+end function;
+
+
+
+//----------------------------------------------------------------------------------------------------------------
+//Glues together the vectors in SmallMat, with a combination of vectors from BigMat. CheckPart is the number of first columns that we are "gluing along".
+//"Adding" the two vectors are in this case defined componentwise as 1 if v1[i] = 1 or v2[i] = 1, and 0 if v1[i] = v2[i] = 0.
+GlueTogether := function(BigMat,SmallMat,CheckPart)
+
+	GluedMat := ZeroMatrix(K,NumberOfRows(SmallMat),ColSize);
+	
+	CheckMatrix := ZeroMatrix(K,NumberOfRows(BigMat) + 1,CheckPart);
+	InsertBlock(~CheckMatrix,Submatrix(BigMat,1,1,NumberOfRows(BigMat),CheckPart),1, 1);
+	
+	for i in [1..NumberOfRows(SmallMat)] do
+	
+		InsertBlock(~CheckMatrix,Submatrix(SmallMat,i,1,1,CheckPart),NumberOfRows(BigMat) + 1, 1);
+		Ker := Kernel(CheckMatrix);
+		if Dimension(Ker) ne 1 then
+		
+			printf "Error! Not Unique Kernel when gluing together!";
+		
+		end if;
+		
+		KerEl := (Basis(Ker))[1];
+		GlueVec1 := Submatrix(KerEl,1,1,1,NumberOfColumns(KerEl) - 1)*BigMat;
+		
+		for j in [1..ColSize] do
+		
+			if GlueVec1[1,j] eq 1 then
+
+				GluedMat[i,j] := 1;
+
+			elif SmallMat[i,j] eq 1 then
+			
+				GluedMat[i,j] := 1;
+			
+			else
+			
+				GluedMat[i,j] := 0;
+			
+			end if;
+		
+		end for;
+	
+	end for;
+
+	return GluedMat;
+
+end function;
+
+
+//----------------------------------------------------------------------------------------------------------------
+//Start testing whether qHom is indeed what we want it to be
+TestqHom := function(qHom,Plus)
+
+//Accounts for the OPlus modifiers
+if OPlus ge 2 then
+	OPlusComb := Binomial(OPlus,2);
+else
+	OPlusComb := 0;
+end if;
+
+//The first test checks that qHom has no overlap with p1^h..pd^h,RandPol^h
+FirstTest := 0;
+TestMat1 := ZeroMatrix(K,NumberOfRows(qHom) + m,ColSize);
+InsertBlock(~TestMat1,PublicMatrixCreator(),1, 1);
+if Rank(TestMat1) eq m then
+	
+	InsertBlock(~TestMat1,qHom,m + 1, 1);
+	
+	if Rank(TestMat1) eq (m + Plus + OPlusComb) then
+	
+		FirstTest := 1;
+	
+	end if;
+	
+end if;
+
+//Test2 checks that qHom is actually linearly dependent of p1^h..pd^h,RandPol^h,q1^h..qt^h
+SecondTest := 0;
+//XTuple needed to convert PlusPol to the right polynomial ring(through Evaluate)
+XTuple := [];
+
+for i in [1..n] do
+
+	Append(~XTuple,P.i);
+
+end for;
+
+
+//CheckMatrix is used to test whether PMatrix is linearly equivalent to q1..qt,...(vivj)^h...,p1..pd,p_R.
+CheckMatrix := ZeroMatrix(K,m + 2*Plus + OPlusComb,ColSize);
+
+
+counter := 1;
+
+for i in [1..Plus] do
+
+	CheckMatrix[counter] := GetVec2(Evaluate(PlusPol[i],XTuple));
+	counter := counter + 1;
+
+end for;
+
+InsertBlock(~CheckMatrix,PublicMatrixCreator(),Plus + 1, 1);
+if Rank(CheckMatrix) eq (Plus + m) then
+	InsertBlock(~CheckMatrix,qHom,Plus + m + 1, 1);
+	
+	if Rank(CheckMatrix) eq (Plus + m + OPlusComb) then
+		SecondTest := 1;
+	end if;
+	
+end if;
+
+
+if (FirstTest eq 1) and (SecondTest eq 1) then
+	return "qHom is all good!";
+else
+	return "Error! Something is wrong for the tests on qHom!";
+end if;
+
+
+end function;
+
+//----------------------------------------------------------------------------------------------------------------
+
+//Start Program
+
+
+
+if UseFixVars eq 1 then
+
+//Creates the matrices I1 and I2 (in glex order)
+I1 := FixPolynomials(I,FixVar1);
+RandPI1 := FixPolynomials([RandP],FixVar1);
+I1Matrix := PMatrixCreator(I1,RandPI1);
+
+//I1 contains the projected p1..pd,RandP. (Note that from how PMatrixCreator works, the first QuadraticModifiers + m rows should be linearly independent (but we check, nontheless)
+I1Matrix := SubmatrixRange(I1Matrix, 1, 1, QuadraticModifiers + m, ColSize);
+if Rank(I1Matrix) ne QuadraticModifiers + m then
+	printf "Wrong Rank of the I1Matrix!";
+end if;
+
+
+I2 := FixPolynomials(I,FixVar2);
+RandPI2 := FixPolynomials([RandP],FixVar2);
+I2Matrix := PMatrixCreator(I2,RandPI2);
+
+//Finds QuadraticModifiers vectors of I2 that are not linearly dependent of p1^h..pd^h,RandP^h projected at FixVar2
+I2RandPI2 := QuadMacCreator(I2 cat RandPI2);
+ReducedI2Matrix := ReduceI(I2Matrix,I2RandPI2,QuadraticModifiers);
+
+
+
+
+//Ord is a vector counting the glex order. GlueAlong finds the common variables, that are NOT fixed in FixVar1 and FixVar2. Permutation12 is 
+//the permutation matrix that sends the glex order to an order that starts with the quadratic combinations of the common variables.
+Ord := GetOrder();
+
+GlueAlong := FindGlueAlong(FixVar1, FixVar2);
+
+Permutation12 := PermutationCreator(Ord, GlueAlong);
+
+PermutedOrd12 := Ord*Permutation12;
+
+
+//Change the order of the I1 and (reduced) I2 matrices such that their overlap is at the first columns.
+Permuted12I1Matrix := I1Matrix*(GeneralLinearGroup(ColSize,K) ! Permutation12);
+
+Permuted12ReducedI2Matrix := ReducedI2Matrix*(GeneralLinearGroup(ColSize,K) ! Permutation12);
+
+//Glue together to find t vectors of I1 and I2. 
+GluedI1AndI2 := GlueTogether(Permuted12I1Matrix,Permuted12ReducedI2Matrix,Binomial(#GlueAlong,2));
+
+//Permutes the order back to glex order (recall that the transpose of a permutation is its inverse).
+GluedI1AndI2 := GluedI1AndI2*(GeneralLinearGroup(ColSize,K) ! Transpose(Permutation12));
+
+
+//Creates the I3-matrix
+I3 := FixPolynomials(I,FixVar3);
+RandPI3 := FixPolynomials([RandP],FixVar3);
+I3Matrix := PMatrixCreator(I3,RandPI3);
+
+//I3 contains the projected p1..pd,RandP. (Note that from how PMatrixCreator works, the first QuadraticModifiers + m rows should be linearly independent (but we check, nontheless)
+I3Matrix := SubmatrixRange(I3Matrix, 1, 1, QuadraticModifiers + m, ColSize);
+if Rank(I3Matrix) ne QuadraticModifiers + m then
+	printf "Wrong Rank of the I3Matrix!";
+end if;
+
+
+//Now find the permutation using the I1-variables to be glued along (of course, a different choice could be made here)
+PermutationI1 := PermutationCreator(Ord, FixVar1);
+
+PermutedOrdI1 := Ord*PermutationI1;
+
+PermutedGluedI1AndI2 := GluedI1AndI2*(GeneralLinearGroup(ColSize,K) ! PermutationI1);
+PermutedI3 := I3Matrix*(GeneralLinearGroup(ColSize,K) ! PermutationI1);
+
+//The final glue is performed, and permuted back to glex
+qHom := GlueTogether(PermutedI3,PermutedGluedI1AndI2,Binomial(#FixVar1,2));
+qHom := qHom*(GeneralLinearGroup(ColSize,K) ! Transpose(PermutationI1));
+
+
+else
+
+	RandPKernel := PMatrixCreator(I,[RandP]);
+	
+	MaxRank := Rank(RandPKernel);
+	
+	CountRank := 0;
+	
+	counter := 1;
+	
+	qHom := ZeroMatrix(K,MaxRank,ColSize);
+	
+	while CountRank lt MaxRank do
+	
+		InsertBlock(~qHom,RandPKernel[counter],CountRank + 1,1);
+		counter := counter + 1;
+		
+		if CountRank + 1 eq Rank(qHom) then
+		
+			CountRank := CountRank + 1;
+		
+		end if;
+	
+	end while;
+	
+
+end if;
+
+
+
+if UseTestQHom eq 1 then
+	//Runs test on qHom
+	TestqHom(qHom,Plus);
+end if;
+
+
+
+

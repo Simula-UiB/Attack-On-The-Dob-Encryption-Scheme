@@ -1,0 +1,358 @@
+//Step 3, assuming that both the files "Generate Public Key (Step 1)" and "Recover G (Step 2)" have been run 
+//Assumes k >= 4. 
+//Finds and tests v_1*,...v_k*, (named OPlusMat here), as described in Section 6.3 of the article.
+
+
+ReducedqHom := ZeroMatrix(K,NumberOfRows(qHom) + m - 3,NumberOfColumns(qHom));
+
+PubMat := PublicMatrixCreator();
+
+InsertBlock(~ReducedqHom,Submatrix(PubMat, 4, 1, NumberOfRows(PubMat) - 3, NumberOfColumns(PubMat)),1, 1);
+
+InsertBlock(~ReducedqHom,qHom,m-2, 1);
+
+
+
+//The first step is to create a degree 3 Macaulay matrix from ReducedqHom, and find its kernel
+totSizeThree := Binomial(n,3);
+
+RowSizeThree := n*NumberOfRows(ReducedqHom);
+
+
+//function that takes as input a monomial, and returns its entry in a homogeneous Macaulay matrix of degree 3.
+GetMonIndThree := function(a)
+
+  monDeg := WeightedDegree(a);
+  
+  if monDeg eq 3 then
+  
+	t := [];
+    
+    ls :=GetFirstVarInd(a,3);
+    Append(~t,StringToInteger(ls[1]));
+	
+	ls :=GetFirstVarInd(ls[2],2);
+    Append(~t,StringToInteger(ls[1]));
+	
+	ls :=GetFirstVarInd(ls[2],1);
+    Append(~t,StringToInteger(ls[1]));
+
+    ind := 0; 
+
+    for i in [1.. t[1]-1] do 
+      ind := ind + Binomial(n-i,2);
+    end for;
+	
+	for i in [t[1] + 1.. t[2]-1] do 
+      ind := ind + Binomial(n-i,1);
+    end for;
+	
+	for i in [t[2] + 1.. t[3]-1] do 
+      ind := ind + Binomial(n-i,0);
+    end for;
+	
+	
+	ind := ind + 1;
+  
+  else
+
+    print "Wrong weight of monomial";
+    ind := -1;  
+
+  end if;
+
+
+  return ind;
+
+end function;
+
+
+//-----------------------------------------------------------------------------------------------------
+
+//Get Vector in a homogeneous degree 3 macaulay matrix. Columns = number of columns
+GetVec3 := function(f,Columns)
+
+
+  V:= Zero(VectorSpace(K,Columns));
+
+  for el in Monomials(f) do
+    
+    if el eq 1 then
+      break;
+    else
+		
+		monDeg := WeightedDegree(el);
+		
+				
+		if monDeg eq 3 then
+		
+			Entry := GetMonIndThree(el);
+			
+			
+
+		
+				V[ZZ!Entry] := 1;
+			
+
+		
+		else
+		
+			break;
+		
+		end if;
+		
+	end if;
+
+  end for;
+
+  return V;
+
+end function;
+
+
+//------------------------------------------------------------------------------------------
+//Function that creates a list of the degree 3 or degree 2 monomials. deg = 2,3
+GetDegreeThreeOrTwoList := function(n,totSizeDeg,deg)
+	
+
+	Vec := ZeroMatrix(P,1,totSizeDeg);
+	counter := 1;
+	
+	if deg eq 3 then
+	for i in [1..n-2] do
+	
+		for j in [i + 1.. n-1] do
+		
+				for k in [j + 1.. n] do
+				
+					Vec[1,counter] := P.i*P.j*P.k;
+					counter := counter + 1;
+				
+				end for;
+		
+		end for;
+		
+	end for;
+	
+	elif deg eq 2 then
+
+	for i in [1..n-1] do
+	
+		for j in [i + 1.. n] do
+		
+				
+					Vec[1,counter] := P.i*P.j;
+					counter := counter + 1;
+					
+		end for;
+		
+	end for;
+
+	else
+	
+		printf "Something Wrong in GetDeglist!";
+	
+	end if;
+	
+	return Vec;
+
+end function;
+
+
+//-------------------------------------------------------------------------------------------------------------------------------------
+//Takes as input a vector representing a homogeneous degree 2 polynomial, and returns its polynomial.
+GetPolyFromVecDeg2 := function(V,n)
+
+	col := NumberOfColumns(V);
+	
+	MonList := GetDegreeThreeOrTwoList(n,Binomial(n,2),2);
+	
+	poly := P ! 0;
+	
+	for i in [1..col] do
+	
+		if V[i] eq 1 then
+		
+			poly := poly + MonList[1,i];
+			
+		end if;
+	
+	end for;
+	
+	return poly;
+	
+end function;
+
+
+//-------------------------------------------------------------------------------------------------------
+//Function takes the inputs a quadratic polynomial system I. All polynomials are mulitplied by each linear variable x_i, and creates the corresponding homogeneous 
+//degree 3 Macaulay matrix..
+DegThreeMacCreator := function(I,RowSizeThree,totSizeThree)
+
+	counter := 1;
+	Mac := ZeroMatrix(K,RowSizeThree,totSizeThree);
+
+
+	for el in [1..NumberOfRows(I)] do
+	
+		for i in [1..n] do
+			Mac[counter] := GetVec3(P.i*(P ! GetPolyFromVecDeg2(I[el],n)),totSizeThree);
+			counter := counter + 1;
+		end for;
+		
+	end for;
+
+	return Mac;
+
+end function;
+
+
+
+
+
+//--------------------------------------------------------------------------------------------------------
+//Function that takes as input a homogeneous degree 3 Macaulay matrix. Computes the Kernel of the Macaulay matrix, and returns a matrix containing
+//the linear forms that was multiplied with the first polynomial from I, when creating these kernel vectors. The idea is that the rows of this 
+//matrix will be in the span of the Oplus linear forms 
+FindKerFrom3Mac := function(Mac)
+
+	Ker := Kernel(Mac);
+	BKer := Basis(Ker);
+	
+	Cols := NumberOfColumns(Mac);
+	
+	
+	OPlusMatrix := ZeroMatrix(GF(2), Dimension(Ker), n);
+
+	for i in [1..Dimension(Ker)] do 
+
+		V := SubmatrixRange(BKer[i], 1, 1, 1, n);
+	
+		InsertBlock(~OPlusMatrix,V,i,1);
+	
+	end for;
+
+	return OPlusMatrix;
+
+end function;
+
+
+//-------------------------------------------------------------------------------------------------------
+//Not really the most efficient method, but it gets the job done.
+//Note: Uses KX_n, as this is the ring where OPlusPol were defined.
+GetLinVec := function(a,n)
+
+	V := ZeroMatrix(K,1,n);
+
+
+	for el in Monomials(a) do
+	
+		if WeightedDegree(el) eq 1 then
+		
+		correct := 0;
+		
+		for i in [1..n] do
+		
+			if KX_n.i eq el then
+			
+				V[1,i] := 1;
+			
+				correct := 1;
+				
+				break;
+				
+			end if;
+		
+		end for;
+		
+		if correct eq 0 then
+		
+			printf "Something Wrong in GetLinVec!";
+			
+			return -1;
+		
+		end if;
+		
+		end if;
+	
+	end for;
+	
+	return V;
+
+end function;
+
+
+//-------------------------------------------------------------------------------------------------------------------------
+//Checks the rank of OPlusPol, and that it is indeed linear equivalent to the (original) OPlus polynomials
+TestOPlusMat := function(OPlusMat,OPlusPol,OPlus,n)
+
+	if Rank(OPlusMat) ne OPlus then
+	
+		return "Wrong Rank of OPlusMat!";
+	
+	end if;
+	
+	//CompareMatrix is created in order to check that OPlusMat is linear equivalent to the original OPlus polynomials
+	CompareMatrix := ZeroMatrix(K,2*OPlus,NumberOfColumns(OPlusMat));
+	
+	counter := 1;
+	TempRank := 0;
+	while TempRank lt OPlus do
+	
+		CompareMatrix[TempRank + 1] := OPlusMat[counter];
+		
+		if Rank(CompareMatrix) gt TempRank then
+		
+			TempRank := Rank(CompareMatrix);
+		
+		end if;
+		
+		counter := counter + 1;
+	
+	end while;
+	
+	OriginalOPlusMat := ZeroMatrix(K,OPlus,NumberOfColumns(OPlusMat));
+	
+	for i in [1..OPlus] do
+	
+		InsertBlock(~OriginalOPlusMat,GetLinVec(OPlusPol[i],n),i, 1);
+	
+	end for;
+	
+	if Rank(OPlusMat) ne OPlus then
+	
+		return "Wrong Rank of the original OPlus polynomials!";
+	
+	end if;
+	
+	
+	InsertBlock(~CompareMatrix,OriginalOPlusMat,OPlus + 1, 1);
+	
+	if Rank(CompareMatrix) eq OPlus then
+	
+		return "OPlusMat is linear equivalent to the original OPlus polynomials!";
+	
+	else
+	
+		return "OPlusMat is NOT linear equivalent to the original OPlus polynomials!";
+	
+	end if;
+
+
+end function;
+
+
+
+//-----------------------------------------------------------------------------------------------
+
+//--------------------------------------------Start Program--------------------------------------
+
+//-----------------------------------------------------------------------------------------------
+
+//Generate the degree Macaulay matrix
+ThreeMac := DegThreeMacCreator(ReducedqHom,RowSizeThree,totSizeThree);
+
+//Find the contribution from the first polynomial to the kernel vectors - this should be linear equivalent to the OPlus polynomials
+OPlusMat := FindKerFrom3Mac(ThreeMac);
+
+TestOPlusMat(OPlusMat,OPlusPol,OPlus,n);
