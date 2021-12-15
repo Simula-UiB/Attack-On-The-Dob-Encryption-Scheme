@@ -1,0 +1,1365 @@
+
+
+//-------------------------------- Start Parameter Selection ------------------------------------------------
+
+
+R := PolynomialRing(L,n,"lex");
+
+//ISize is the number of polynomials to include in I when performing the minors modelling
+//In practice: a larger ISize makes the modelling step slower, but can make the F4 step faster
+//Note: choose ISize a multiple of 20 for the shuffling in CreateIFromRandomMinors to work
+ISize := 20000;
+
+//Set the rank for the minors modelling (2 for Dob)
+RankOfAttack := 2;
+
+//-------------------------------- End Parameter Selection ------------------------------------------------
+
+//-------------------------------------- Start Functions --------------------------------------------------------------------
+
+//------------------------------------------------------------------------------------------------------
+CreateM := function(q,n,K,R);
+
+	M := ZeroMatrix(R,n,n);
+	
+	for i in [0..n-1] do
+	
+		for j in [0..n-1] do
+		
+			M[j+1,i+1] := K.1^(j*q^i);
+		
+		end for;
+	
+	end for;
+
+	return M;
+	
+end function;
+
+
+//------------------------------------------------------------------------------------------------------
+
+Uni2Multi:=function(n,p,m,Coeff,LinTrue);
+  
+	L<g>:=ext<K|n>;
+  
+	LX<X>:=PolynomialRing(L);
+  
+	LX_n:=quo<PolynomialRing(L,n,"grevlex")|[$.i^(p^ed)-$.i:i in [1..n]]>;
+    
+	//polin:=Evaluate(pol,&+[(L.1)^(i-1)*LX_n.i:i in [1..n]]);
+    
+	temp := 0;
+	
+	for i in [1..n] do
+		
+		temp:= temp + (L.1)^(i-1)*LX_n.i;
+	
+	end for;
+	
+	XPow := Evaluate(X,temp);
+	ExpVal := XPow;
+	
+	for i in [1..m] do
+	
+		ExpVal := ExpVal^2;
+	
+	end for;
+	
+	polin:= ExpVal*XPow + Evaluate(X^3,temp);
+	
+	if LinTrue eq 1 then
+	
+		polin:= polin + XPow;
+		
+	end if;
+	
+	polin:= polin*Coeff;
+	
+	h1:=[Eltseq(c):c in Coefficients(polin)];
+   
+	h2:=Monomials(polin);
+   
+	LX2KX:=hom< LX_n-> KX_n | [KX_n.i : i in [1..n]] >;
+   
+	Erg:=[ LX2KX(&+[ h1[j,i]*h2[j] : j in [1..#h2]]) : i in [1..n]];
+ 
+	return Erg;
+
+end function;
+
+
+//----------------------------------------------------------------------------
+// Making an n tupel of linear polynomaials from a given matrix
+
+Hom2Pol:=function(S)
+  
+	Erg:=[&+[S[j,i]*KX_n.i:i in [1..n]]: j in [1..n]];
+  
+	return Erg;
+
+end function;
+
+
+//----------------------------------------------------------------------------
+// composition of tupels of multivariate polynomials
+
+Subst:=function(A,B)
+ 
+	Erg:=[Evaluate(A[i],Eltseq(B)): i in [1..n]];
+ 
+	return Erg;
+
+end function;
+
+//---------------------------------------------------------------------------------------
+// composition of SoPoT required to generate a public multivariate key.
+
+Hide:=function(P,affin,S,T)
+
+  
+	SPol:=Hom2Pol(S);
+  
+	TPol:=Hom2Pol(T);
+   
+	Sinv:=S^-1;
+   
+	Tinv:=T^-1;
+  
+	SPolinv:=Hom2Pol(Sinv);
+  
+	TPolinv:=Hom2Pol(Tinv);
+  
+	if (affin eq 1) then
+   
+		for j in [1..n] do
+   
+			SPol[j]:=SPol[j]+KX_n!Random(K);
+   
+			TPol[j]:=TPol[j]+KX_n!Random(K);
+  
+		end for;
+  
+	end if;
+  
+return Subst(SPol,Subst(P,TPol)),SPol,TPol,SPolinv,TPolinv;
+
+end function;
+
+
+
+//------------------------------------------------------------------------------------------------------
+
+Multi2Uni:=function(ntupel,E,Basis,p,m)
+ 
+	dim:=Degree(E);
+ 
+	LX<X>:=PolynomialRing(E);
+ 
+	LX2<Y>:=quo<LX|X^(p^(m*dim))-X>;
+ 
+	beta:=[LX2!0: i in [1..dim]];
+ 
+	Spurpol:=&+[X^(p^(m*i)): i in [0..dim-1]];
+ 
+ 
+
+	for i in [1..dim] do
+   
+		print "Working on  ",i, "-th component";
+   // Determine c such that Trace(c*Basis[j])=1 only for j=i and 0 else
+   
+		pols:=&cat [[Evaluate(Spurpol,X*Basis[i])]: i in [1..dim]];
+   
+		pols[i]:=pols[i]-1;
+   
+		I:=ideal<LX|pols>;
+   // Projection on i-th component
+   
+		beta[i]:=Evaluate(Spurpol,Y*Coefficients(Generator(I))[1]);
+ 
+	end for;
+
+ 
+
+	print"Generate univariate polynomial.......";
+
+ 
+	Uni:=&+[Evaluate(ntupel[i],beta)*Basis[i]: i in [1..dim]];
+ 
+	Uni:=Evaluate(Uni,X);
+ 
+	return Uni;
+
+end function;
+
+
+//--------------------------------------------------------------------------------------------------
+//takes a matrix and returns the corresponding quadratic polynomial
+PolyFromMatrix := function(B,M,n);
+	
+	Poly := B ! 0;
+	
+	for i in [1..n - 1] do
+	
+		for j in [i..n] do
+		
+			if M[i,j] eq 1 then
+			
+				Poly := Poly + B.i*B.j;
+			
+			end if;
+		
+		end for;
+	
+	end for;
+	
+	return Poly;
+
+end function; 
+
+//--------------------------------------------------------------------------------------------------
+//takes a polynomial and returns the corresponding symmetric matrix (over target field K)
+ReturnSymMatrix := function(f,n,K,R)
+
+M := ZeroMatrix(K,n,n);
+
+for el in Monomials(f) do
+
+
+if WeightedDegree(el) eq 2 then
+
+	for i in [1..n - 1] do
+	
+			if IsDivisibleBy(el,R.i) then
+		
+				t := R ! (el/R.i);
+				
+				for j in [i + 1..n] do
+				
+					if IsDivisibleBy(t,R.j) then
+						
+						M[i,j] := 1;
+			
+						M[j,i] := 1;
+						
+						break;
+						
+					end if;
+					
+				end for;
+		
+			break;
+		
+			end if;
+	
+	end for;
+
+end if;
+
+end for;
+
+return M;
+
+end function; 
+
+
+
+//---------------------------------------------------------------------------------------------------------------------------------------------
+//Shuffles the rows of a matrix
+ShuffleMat := function(Mat);
+
+	r := NumberOfRows(Mat);
+	
+	for i in [1..10*r] do
+	
+		r1 := Random(1,r);
+		r2 := Random(1,r);
+		
+		temp := Mat[r1];
+		Mat[r1] := Mat[r2];
+		Mat[r2] := temp;
+	
+	end for;
+	
+	return Mat;
+
+end function;
+
+
+//-----------------------------------------------------------------------------------------------------------------------------------------
+//Returns a sequence of polynomials from the (rank + 1)-minors of an r\times t matrix over the ring R. ISize is the number of equations retrived;
+//(the equations are chosen randomly).
+CreateIFromRandomMinors := function(r,t,rank,Mat,R,ISize);
+
+s := rank + 1;
+
+I := [];
+
+
+count := 0;
+
+//Each run is biased towards the last rows, which is why I've added a shuffle five times.
+
+for sr in [1..20] do
+
+Mat := ShuffleMat(Mat);
+
+for runs in [1..ISize/20] do
+
+
+	//Create two integer tuples of size s
+	M := [0];
+	N := [0];
+	for j in [1..s] do
+		Append(~M,Random(M[j] + 1,r - s + j));
+		Append(~N,Random(N[j] + 1,t - s + j));
+	end for;
+
+	//Remove the first 0 in M and N
+	M := Reverse(M);
+	Prune(~M);
+	M := Reverse(M);
+
+	N := Reverse(N);
+	Prune(~N);
+	N := Reverse(N);
+
+
+	TempMat := ZeroMatrix(R,s,s);
+		
+		
+	for k in [1..s] do
+		
+		for l in [1..s] do
+				
+			TempMat[k,l] := Mat[M[k],N[l]];
+			
+		end for;
+		
+	end for;
+		
+		I := I cat [Determinant(TempMat)];
+
+end for;
+
+end for;
+
+
+return I;
+
+end function;
+
+
+//------------------------------------------------------------------------------------------------------
+CreateST := function(STSpace,KX_n,n);
+
+N := ZeroMatrix(KX_n,n,n);
+
+NTemp := Random(STSpace);
+
+for i in [1..n] do
+
+	for j in [1..n] do
+	
+		N[i,j] := KX_n ! NTemp[i,j];
+	
+	end for;
+
+end for;
+
+return N;
+
+end function;
+
+//------------------------------------------------------------------------------------------------------
+MatChangeRing := function(Mat,Ring);
+
+	n1 := NumberOfRows(Mat);
+	n2 := NumberOfColumns(Mat);
+	NewM := ZeroMatrix(Ring,n1,n2);
+	
+	for i in [1..n1] do
+	
+		for j in [1..n2] do
+		
+			NewM[i,j] := Ring ! Mat[i,j];
+		
+		end for;
+	
+	end for;
+
+	return NewM;
+
+end function;
+
+
+//------------------------------------------------------------------------------------------------------
+//Takes as input a matrix defined over a polynomial ring, but with entries in the base field. Returns the inverse (defined over OutRing).
+
+InvertMat := function(Mat,OutRing,BaseField,n1,n2);
+
+tempM := ZeroMatrix(BaseField,n1,n2);
+
+for i in [1..n1] do
+
+	for j in [1..n2] do
+	
+		tempM[i,j] := BaseField ! Mat[i,j];
+	
+	end for;
+
+end for;
+
+tempM := tempM^-1;
+
+
+return MatChangeRing(tempM,OutRing);
+
+
+end function;
+
+
+
+
+//------------------------------------------------------------------------------------------------------
+MultTCentralMap := function(T,ntupel,n);
+
+	CentralMap := [];
+	
+	for i in [1..n] do
+	
+	temp := 0;
+	
+		for j in [1..n] do
+		
+			temp := temp + T[j,i]*ntupel[j];
+		
+		end for;
+		
+		Append(~CentralMap,temp);
+	
+	end for;
+	
+	return CentralMap;
+
+end function;
+
+//--------------------------------------------------------------------------------------------------------------------------------
+CreateM := function(q,n,K,R);
+
+	M := ZeroMatrix(R,n,n);
+	
+	for i in [0..n-1] do
+	
+		for j in [0..n-1] do
+		
+			M[j+1,i+1] := K.1^(j*q^i);
+		
+		end for;
+	
+	end for;
+
+	return M;
+	
+end function;
+
+
+//-----------------------------------------------------------------------------------------------------
+FrobMatrix := function(L,v,n,q);
+
+m := #L - 1;
+
+Mat := ZeroMatrix(L,n,n);
+
+for i in [1..n] do
+
+	Mat[i,1] := v[i];
+	
+	if v[i] eq 0 then
+	
+		for j in [1..n-1] do
+		
+			Mat[i,j+1] := 0;
+		
+		end for;
+	
+	else
+	
+	l := Log(L.1,Mat[i,1]);
+	
+	for j in [1..n - 1] do
+	
+		l := q*l mod m;
+		
+		Mat[i,j + 1] := L.1^l;
+	
+	end for;
+	
+	end if;
+
+end for;
+
+return Mat;
+
+end function;
+
+
+//------------------------------------------------------------------------------------------------------
+//Input Matrix Mat and integer r. Returns the matrix where all entries have been raised to the power of r
+PowMat := function(Mat,r);
+
+for i in [1..NumberOfColumns(Mat)] do
+
+	for j in [1..NumberOfRows(Mat)] do
+	
+		Mat[j,i] := Mat[j,i]^r;
+	
+	end for;
+
+end for;
+
+return Mat;
+
+end function;
+
+
+//------------------------------------------------------------------------------------------------------
+CreateWSys := function(WX,B,WR,m,n,q);
+
+d := NumberOfRows(B);
+
+I := [];
+
+for i in [1..d] do
+
+	pol := 0;
+	
+	pol2 := 0;
+
+	for j in [1..n] do
+	
+		pol := pol + B[i,j]*WX[j,1];
+		
+		pol2 := pol2 + B[i,j]*WX[j,2] + B[i,j]*WX[j,m+1];
+	
+	end for;
+	
+	I := I cat [pol];
+	
+	I := I cat [pol2];
+
+end for;
+
+for k in [1..n-1] do
+
+	B := PowMat(B,q);
+
+	for i in [1..d] do
+
+		pol := 0;
+	
+		pol2 := 0;
+
+		if 2 + k gt n then
+			
+			int1 := (2 + k) mod n;
+				
+		else
+			
+			int1 := 2 + k;
+				
+		end if;
+			
+		if m + 1 + k gt n then
+			
+			int2 := (m + 1 + k) mod n;
+			
+		else
+			
+			int2 := m + 1 + k;
+			
+		end if;
+
+
+		for j in [1..n] do
+	
+			pol := pol + B[i,j]*WX[j,1 + k];
+			
+			pol2 := pol2 + B[i,j]*WX[j,int1] + B[i,j]*WX[j,int2];
+		
+		end for;
+	
+		I := I cat [pol];
+	
+		I := I cat [pol2];
+
+	end for;
+
+end for;
+
+return I;
+
+end function;
+
+
+//------------------------------------------------------------------------------------------------------
+TestCentralMap := function(M,CentralMap,n);
+
+	Mt := Transpose(M);
+	MInv := M^-1;
+
+	RTupel := [];
+	for i in [1..n] do
+
+		Append(~RTupel,R.i);
+
+	end for;
+	
+	tempMap := [];
+	
+	for i in [1..n] do
+	
+		Append(~tempMap,M*ReturnSymMatrix(Evaluate(CentralMap[i],RTupel),n,L,R)*Mt);
+	
+	end for;
+	
+	NewMap := [];
+	
+	for i in [1..n] do
+	
+		mat := MInv[1,i]*tempMap[1];
+		
+		for j in [2..n] do
+		
+			mat := mat + MInv[j,i]*tempMap[j];
+		
+		end for;
+		
+		Append(~NewMap,mat);
+	
+	end for;
+	
+	return NewMap;
+	
+end function;
+
+
+//------------------------------------------------------------------------------------------------------
+TestCentralMap2 := function(M,CentralMap,n);
+
+	MInv := M^-1;
+	MInvt := Transpose(MInv);
+
+	RTupel := [];
+	for i in [1..n] do
+
+		Append(~RTupel,R.i);
+
+	end for;
+	
+	tempMap := [];
+	
+	for i in [1..n] do
+	
+		Append(~tempMap,MInv*ReturnSymMatrix(Evaluate(CentralMap[i],RTupel),n,L,R)*MInvt);
+	
+	end for;
+	
+	NewMap := [];
+	
+	for i in [1..n] do
+	
+		mat := M[1,i]*tempMap[1];
+		
+		for j in [2..n] do
+		
+			mat := mat + M[j,i]*tempMap[j];
+		
+		end for;
+		
+		Append(~NewMap,mat);
+	
+	end for;
+	
+	return NewMap;
+	
+end function;
+
+//------------------------------------------------------------------------------------------------------
+ReturnSPrimeTuple := function(Mat,KX_n);
+
+n1 := NumberOfRows(Mat);
+n2 := NumberOfColumns(Mat);
+STuple := [];
+
+for i in [1..n1] do
+
+	pol := 0;
+
+	for j in [1..n2] do
+	
+		pol := pol + (KX_n ! Mat[i,j])*KX_n.j;
+		
+	end for;
+	
+	STuple := STuple cat [pol];
+
+end for;
+
+return STuple;
+
+end function;
+
+
+//------------------------------------------------------------------------------------
+
+//The next three functions are for recovering lambda from the univariate expression we have so far
+
+//Returns a vector containing the value of [X*X^{2^m},X^3,X,X^2,X^4,...,X^{2^{d-1}},1]
+InterPolationVec := function(m,XVal,L,d);
+
+	Vec := ZeroMatrix(L,1,d + 3);
+	
+	Vec[1,3] := XVal;
+	
+	for i in [4..d+2] do
+	
+		Vec[1,i] := (Vec[1,i-1])^2;
+	
+	end for;
+	
+	Vec[1,d+3] := 1;
+	
+	Vec[1,1] := Vec[1,3]*Vec[1,m+3];
+	
+	Vec[1,2] := Vec[1,3]*Vec[1,4];
+	
+	return Vec;
+
+end function;
+
+//Returns a sequence of d bits
+RandomSeq := function(K,d);
+
+	Seq := [];
+	
+	for i in [1..d] do
+	
+		Append(~Seq,Random(K));
+	
+	end for;
+	
+	return Seq;
+	
+end function;
+
+//Finds lambda by interpolating matrows input-output pairs from the known multivariate map
+GetLambda := function(MatRows,CentralMap,K,n,m,L);
+
+	Mat := ZeroMatrix(L,MatRows,n + 3);
+	
+	V := VectorSpace(L,MatRows);
+	V2 := VectorSpace(L,n+3);
+	b := ZeroMatrix(L,1,MatRows);
+
+	for j in [1..MatRows] do
+
+		seq := RandomSeq(K,n);
+		yseq := [];
+
+		for i in [1..n] do
+
+			Append(~yseq,Evaluate(CentralMap[i],seq));
+	
+		end for;
+
+		b[1,j] := L ! yseq;
+
+		Mat[j] := V2 ! InterPolationVec(m,L ! seq,L,n);
+	
+	end for;
+	
+	Sol := Solution(Transpose(Mat),V ! b);
+	
+	if Sol[1] eq Sol[2] then
+	
+		return Sol[1];
+	
+	else
+	
+		"Something wrong in the univariate expression!";
+		return -1;
+	
+	end if;
+
+end function;
+
+
+//------------------------------------------------------------------------------------------------------
+
+
+//Returns l_1*,...,l_t* and H_ip'^l
+GetLinPartOfKey := function(R,LMat,HL,n,K,Plus,OPlus,OPlusMat)
+
+RingVars := n*Plus + n*OPlus;
+LRing := BooleanPolynomialRing(n*Plus + n*OPlus,"lex");
+
+//Set Variables. LMat2 will be the l_i*'s and LMat3 is H_{ip}'^l
+LMat2 := ZeroMatrix(LRing,Plus,n);
+count := 1;
+for i in [1..Plus] do
+
+	for j in [1..n] do
+	
+		LMat2[i,j] := LRing.count;
+		
+		count := count + 1;
+		
+	end for;
+
+end for;
+
+LMat3 := ZeroMatrix(LRing,n,OPlus);
+for i in [1..n] do
+
+	for j in [1..OPlus] do
+	
+		LMat3[i,j] := LRing.count;
+		
+		count := count + 1;
+		
+	end for;
+
+end for;
+
+
+
+LI := [];
+
+for i in [1..n] do
+
+	for j in [1..n] do
+	
+		//Constraint for x_j in p_i
+		pol := LMat[i,j];
+		
+		for l in [1..Plus] do
+		
+			pol := pol + HL[i,l]*LMat2[l,j];
+		
+		end for;
+		
+		for l in [1..OPlus] do
+		
+			pol := pol + LMat3[i,l]*OPlusMat[l,j];
+		
+		end for;
+		
+		LI := LI cat [pol];
+
+	end for;
+
+end for;
+
+LSol := GroebnerBasis(LI);
+
+//Chooses random values for the remaining variables
+if #LSol ne RingVars then
+
+	LI := LSol;
+
+	for j in [1..RingVars] do
+		
+		Check := 0;
+		
+		for i in [1..#LSol] do
+		
+			if LRing.j eq Monomials(LSol[i])[1] then;
+			
+				Check := 1;
+				break;
+			
+			end if;
+		
+		end for;
+		
+		if Check eq 0 then
+		
+			LI := LI cat [LRing.j + Random(K)];
+		
+		end if;
+		
+	end for;
+
+	LSol := GroebnerBasis(LI);
+
+end if;
+
+
+
+
+//Sets values to LMat2 and LMat3
+LMat2 := ZeroMatrix(K,Plus,n);
+count := 1;
+for i in [1..Plus] do
+
+	for j in [1..n] do
+	
+		if #Coefficients(LSol[count]) eq 2 then
+		
+			LMat2[i,j] := 1;
+			
+		end if;
+		
+		count := count + 1;
+		
+	end for;
+
+end for;
+
+
+LMat3 := ZeroMatrix(K,n,OPlus);
+for i in [1..n] do
+
+	for j in [1..OPlus] do
+	
+		if #Coefficients(LSol[count]) eq 2 then
+		
+			LMat3[i,j] := 1;
+			
+		end if;
+		
+		count := count + 1;
+		
+	end for;
+
+end for;
+
+
+if (HL*LMat2 + LMat3*SubmatrixRange(OPlusMat,1, 1,OPlus, n)) eq LMat then
+
+	return LMat2,LMat3;
+
+else
+
+	"Something went wrong when finding the linear parts";
+	return -1;
+	
+end if;
+
+
+end function;
+
+
+//------------------------------------------------------------------------------------------------------
+
+//returns a matrix consisting of the homogeneous quadratic part of the possible v_i*v_j*-combinations
+GetQuadOPlusStarPols := function(KX_n,n,OPlus,OPlusMat,KXVec)
+
+OPlusStarPols := [];
+
+for i in [1..OPlus] do
+
+	OPlusStarPols := OPlusStarPols  cat [Evaluate(GetPolyFromLinVec(OPlusMat[i],n),KXVec)];
+
+end for;
+
+QuadOPlusStarPols := [];
+
+for i in [1..OPlus - 1] do
+
+	for j in [i + 1..OPlus] do
+
+		QuadOPlusStarPols := QuadOPlusStarPols cat [OPlusStarPols[i]*OPlusStarPols[j]];
+		
+	end for;
+
+end for;
+
+return QuadOPlusStarPols;
+
+end function;
+
+
+//------------------------------------------------------------------------------------------------------
+
+FindLPart := function(lambda,n,p,SPrime,KX_n,TPrime,OPlus,OPlusMat,QuadOPlus,qHomEl,CentralMap)
+
+CPart := Uni2Multi(n,p,ZZ ! ((n + 1)/2),lambda,1);
+
+
+SPrimeTuple := ReturnSPrimeTuple(SPrime,KX_n);
+
+CentralMapPrime := [];
+for i in [1..n] do
+
+	CentralMapPrime := CentralMapPrime cat [Evaluate(CPart[i],SPrimeTuple)];
+
+end for;
+
+TPrime := MatChangeRing(TPrime,KX_n);
+
+CentralMap2 := MultTCentralMap(TPrime,CentralMapPrime,n);
+
+KXVec := [];
+
+for i in [1..n] do
+
+	Append(~KXVec,KX_n.i);
+
+end for;
+
+
+QuadOPlusStarPols := GetQuadOPlusStarPols(KX_n,n,OPlus,OPlusMat,KXVec);
+
+LPart := [];
+
+for i in [1..n] do
+
+	pol := 0;
+
+	for j in [1..QuadOPlus] do
+	
+		pol := pol + HVh[i,j]*QuadOPlusStarPols[j];
+	
+	end for;
+	
+	//uses t = 1
+	pol := pol + HL[i,1]*Evaluate(GetPolyFromVecDeg2(qHomEl,n),KXVec);
+
+	
+	pol := pol + CentralMap2[i] + CentralMap[i];
+	
+	LPart := LPart cat [pol];
+
+end for;
+
+return LPart,CentralMap2;
+
+end function;
+
+
+//------------------------------------------------------------------------------------------------------
+
+//Tests the rank and returns a matrix associated with LPart
+TestMatLPart := function(LPart,R,n,K,Plus,OPlus)
+
+RVec := [];
+
+for i in [1..n] do
+
+	Append(~RVec,R.i);
+
+end for;
+
+LMat := ZeroMatrix(K,n,n);
+
+for i in [1..n] do
+
+	lMons := Monomials(Evaluate(LPart[i],RVec));
+	
+	count := 1;
+	
+	if #lMons gt 0 then
+	
+	for j in [1..n] do
+	
+		t:= IsDivisibleBy(lMons[count],R.j);
+		
+		if t eq true then
+		
+			LMat[i,j] := 1;
+			
+			if count lt #lMons then
+			
+				count := count + 1;
+				
+			end if;
+		
+		end if;
+	
+	end for;
+	
+	end if;
+
+end for;
+
+if Rank(LMat) eq Plus + OPlus then
+
+	"LMat has rank t + k";
+	return LMat;
+
+else
+
+	"Wrong rank of LMat!";
+	return -1;
+
+end if;
+
+end function;
+
+//------------------------------------------------------------------------------------------------------
+
+//Tests that all components we have recovered equals the public polynomials P
+TestFinalComp := function(CentralMap,FLPrime,Plus,KX_n,qHomEl,OPlus,OPlusMat,QuadOPlus,n,HVl)
+
+	KXVec := [];
+
+	for i in [1..n] do
+
+		Append(~KXVec,KX_n.i);
+
+	end for;
+
+	if Plus gt 1 then
+
+		return "Only implemented for t = 1";
+
+	end if;
+	
+	QuadOPlusStarPols := GetQuadOPlusStarPols(KX_n,n,OPlus,OPlusMat,KXVec);
+
+	pol := FLPrime;
+	
+	for i in [1..n] do
+	
+		for j in [1..QuadOPlus] do
+		
+			pol[i] := pol[i] + HVh[i,j]*QuadOPlusStarPols[j];
+		
+		end for;
+		
+		for j in [1..OPlus] do
+		
+			pol[i] := pol[i] + HVl[i,j]*Evaluate(GetPolyFromLinVec(OPlusMat[j],n),KXVec);
+		
+		end for;
+	
+		pol[i] := pol[i] + HL[i,1]*(Evaluate(GetPolyFromVecDeg2(qHomEl,n),KXVec) + Evaluate(GetPolyFromLinVec(LinStars[1],n),KXVec));
+	
+	end for;
+	
+	for i in [1..n] do
+		
+		if Degree(pol[i] + CentralMap[i]) ne 0 then
+		
+			return "Something wrong with the construction!";
+		
+		end if;
+		
+	end for;
+	
+	return "The equality holds!";
+	
+end function;
+
+//-------------------------------------------- End Functions ----------------------------------------------------------
+
+
+
+//-------------------------------------------- Start Program -----------------------------------------------------------
+
+
+M := CreateM(q,n,L,R);
+
+
+//Set up the MinRank-problem with R.i's as indeterminates
+
+RTupel := [];
+for i in [1..n] do
+
+	Append(~RTupel,R.i);
+
+end for;
+
+//This sets R.1 := 1
+Mat := ReturnSymMatrix(Evaluate(GetPolyFromVecDeg2(FPrime[1],n),RTupel),n,L,R);
+//Mat := ReturnSymMatrix(Evaluate(UnModCentralMap[1],RTupel),n,L,R);
+
+for i in [2..n] do
+
+	Mat := Mat + R.i*ReturnSymMatrix(Evaluate(GetPolyFromVecDeg2(FPrime[i],n),RTupel),n,L,R);
+	//Mat := Mat + R.i*ReturnSymMatrix(Evaluate(UnModCentralMap[i],RTupel),n,L,R);
+
+end for;
+
+
+//Use all minors
+//I := CreateIFromMinors(ro,n,RankOfAttack,Mat,R,ISize);
+
+
+//Use CreateIFromRandomMinors to generate a system of minors of size ISize (Pick randomly from all possible minors
+time I := CreateIFromRandomMinors(n,n,RankOfAttack,Mat,R,ISize);
+
+
+
+//Find a lex Gröbner basis for the minors system
+SetVerbose("Groebner", 2);
+time J := GroebnerBasis(I);
+
+
+//Fix a solution by choosing one of the roots of the last (univariate) polynomial of the lex basis
+Q := PolynomialRing(L);
+
+QTuple := [];
+
+for i in [1..n-1] do
+
+	Append(~QTuple,Q ! 0);
+
+end for;
+
+Append(~QTuple,Q.1);
+
+PossibleRoots := Roots(Evaluate(J[#J],QTuple));
+
+I := J;
+I := I cat [R.n - PossibleRoots[1][1]];
+
+
+SetVerbose("Groebner", 1);
+time J2 := GroebnerBasis(I);
+
+
+//Assumes a solution J2 is found for the MinRank problem, and go on to Create an equivalent T'
+
+v := [L ! 1];
+
+for i in [1..n-1] do
+
+	v := v cat [Coefficients(J2[i])[2]];
+
+end for;
+
+
+//Creates U from the first column v
+U := FrobMatrix(L,v,n,q);
+
+//Recovers an equivalent T
+TPrime := M*U^-1;
+
+
+//TPrime := MatChangeRing(TPrime,KX_n);
+TPrimeInv := InvertMat(TPrime,KX_n,K,n,n);
+
+
+
+
+
+//Recreate Mat with the values in v, for finding W
+Mat := ReturnSymMatrix(Evaluate(GetPolyFromVecDeg2(FPrime[1],n),RTupel),n,L,R);
+for i in [2..n] do
+
+	Mat := Mat + v[i]*ReturnSymMatrix(Evaluate(GetPolyFromVecDeg2(FPrime[i],n),RTupel),n,L,R);
+
+end for;
+
+Ker := Kernel(Mat);
+
+Bas := Basis(Ker);
+
+WR := PolynomialRing(L,n^2,"grevlex");
+
+B := ZeroMatrix(WR,Dimension(Ker),n);
+
+for i in [1..Dimension(Ker)] do
+
+	for j in [1..n] do
+
+		B[i,j] := WR ! Bas[i,j];
+		
+	end for;
+
+end for;
+
+
+WX := ZeroMatrix(WR,n,n);
+
+count := 1;
+
+for i in [1..n] do
+
+	for j in [1..n] do
+	
+		WX[i,j] := WR.count;
+		
+		count := count + 1;
+	
+	end for;
+
+end for;
+
+
+WSys := CreateWSys(WX,B,WR,ZZ ! ((n + 1)/2),n,q);
+
+WSys := WSys cat [WR.(n^2 - 1)^2 - WR.(n^2)];
+
+WSol := GroebnerBasis(WSys);
+
+
+//At this point, WSol includes one quadratic equation, namely WR.(n^2)^2 - C*WR.(n^2). Adds the non-zero solution to this to the system, to end up with a unique solution for the 
+WSys := WSys cat [WR.(n^2) - Coefficients(WSol[1])[2]];
+
+
+WSol := GroebnerBasis(WSys);
+
+
+
+W := ZeroMatrix(L,n,n);
+
+count := 1;
+
+for i in [1..n] do
+
+	for j in [1..n] do
+	
+		W[i,j] := Coefficients(WSol[count])[2];
+	
+		count := count + 1;
+	
+	end for;
+
+end for;
+
+
+MInv := InvertMat(M,WR,L,n,n);
+
+SPrime := Transpose(W*MInv);
+
+
+SPrimeTuple := ReturnSPrimeTuple(SPrime^-1,KX_n);
+
+CentralMapPrime := [];
+for i in [1..n] do
+
+	CentralMapPrime := CentralMapPrime cat [Evaluate(GetPolyFromVecDeg2(FPrime[i],n),SPrimeTuple)];
+
+end for;
+
+
+CentralMap2 := MultTCentralMap(TPrimeInv,CentralMapPrime,n);
+
+
+//Find lambda (uses n + 20 input-output pairs for the interpolation)
+lambda := GetLambda(n + 20,CentralMap2,K,n,ZZ ! ((n + 1)/2),L);
+
+
+//Returns the right hand side of the equation to find H_ip'^l and l_1*,...,l_t*, as well as FLPrime = F' + L'
+LPart,FLPrime := FindLPart(lambda,n,p,SPrime,KX_n,TPrime,OPlus,OPlusMat,QuadOPlus,qHomEl,CentralMap);
+
+
+//Tests the rank and returns a matrix associated with LPart
+LMat := TestMatLPart(LPart,R,n,K,Plus,OPlus);
+
+
+//Returns l_1*,...,l_t* and H_ip'^l
+LinStars,HVl := GetLinPartOfKey(R,LMat,HL,n,K,Plus,OPlus,OPlusMat);
+
+
+//Tests that all components we have recovered equals the public polynomials P
+TestFinalComp(CentralMap,FLPrime,Plus,KX_n,qHomEl,OPlus,OPlusMat,QuadOPlus,n,HVl);
+
+
+
+
